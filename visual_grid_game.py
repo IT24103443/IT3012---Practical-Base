@@ -1,7 +1,7 @@
 # visual_grid_game.py
 import random
 import tkinter as tk
-
+from agent import SearchAgent
 
 class VisualGridHuntGame:
     """A flexible Pacman-style grid environment with support for configurable opponents and larger scales."""
@@ -79,7 +79,10 @@ class VisualGridHuntGame:
             'toxin_ahead': front in self.toxic_traps,
             'opponent_ahead': opponent_ahead,
             'collision': self.collision,
-            'score': self.score
+            'score': self.score,
+            'grid_size': (self.width, self.height),
+            'walls': list(self.walls),
+            'all_food': list(self.food_positions)
         }
 
     def execute_action(self, action: str):
@@ -264,7 +267,7 @@ class GridGameGUI:
     def __init__(self, root, width=10, height=10, num_food=12, num_opponents=4, num_traps=5,walls=None):
         self.root = root
         self.root.title("SE3062 - Scalable Multi-Agent Grid Hunt")
-        self.agent = ModelBasedAgent()
+        self.agent = SearchAgent()
 
         self.env = VisualGridHuntGame(width=width, height=height, num_food=num_food, num_opponents=num_opponents, num_traps=num_traps,
                                                             custom_walls=walls)
