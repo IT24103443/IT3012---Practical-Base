@@ -2,6 +2,7 @@
 from collections import deque
 import heapq
 import math
+from logic_engine import KnowledgeBase
 
 class GreedyGridAgent:
     """A simple agent that tries to move around systematically to clear the grid."""
@@ -22,6 +23,12 @@ class SearchAgent:
         self.active_algo = 'AStar'      # change to 'BFS','DFS','UCS' or 'AStar' 
         self.pos = (0, 0)
         self.facing = 'Up'
+
+        self.kb = KnowledgeBase()
+        # Rule 1: TargetVisible AND HasDust => SafeToEngage
+        self.kb.tell_rule(['TargetVisible', 'HasDust'], 'SafeToEngage')
+        # Rule 2: SafeToEngage AND BloodseekerMissing => Retreat
+        self.kb.tell_rule(['SafeToEngage', 'BloodseekerMissing'], 'Retreat')
 
     def closest_food(self, all_food):
         if not all_food:
@@ -64,12 +71,27 @@ class SearchAgent:
                 return 'TurnLeft'
             walls = set(percept['walls'])
             grid_size = percept['grid_size']
+
+            # per-tile facts the KB reasons over ({(x, y): [facts]})
+            tile_facts = {
+                (1, 0): ['TargetVisible', 'HasDust', 'BloodseekerMissing'],  # deduces Retreat: blocked
+                (0, 1): ['TargetVisible', 'HasDust'],                        # SafeToEngage only: allowed
+            }
             if self.active_algo == 'BFS':
                 directions = self.bfs_search(self.pos, goal, walls, grid_size)
             elif self.active_algo == 'DFS':
                 directions = self.dfs_search(self.pos, goal, walls, grid_size)
             elif self.active_algo == 'AStar':
-                directions = self.astar_search(self.pos, goal, walls, grid_size, heuristic_type='manhattan')
+                directions = self.astar_search(self.pos, goal, walls, grid_size,
+                                               heuristic_type='manhattan', tile_facts=tile_facts)
+                if not directions:
+                    # nearest food is not feasibly reachable -> try the next nearest ones
+                    x, y = self.pos
+                    for food in sorted(percept['all_food'], key=lambda f: abs(f[0] - x) + abs(f[1] - y)):
+                        directions = self.astar_search(self.pos, food, walls, grid_size,
+                                                       heuristic_type='manhattan', tile_facts=tile_facts)
+                        if directions:
+                            break
             else:
                 directions = self.ucs_search(self.pos, goal, walls, grid_size)
             self.plan = self.directions_to_actions(directions)
@@ -149,7 +171,10 @@ class SearchAgent:
     def euclidean_distance(self, pos, goal):
         return math.sqrt((pos[0] - goal[0]) ** 2 + (pos[1] - goal[1]) ** 2)
 
-    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan'):
+    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan', tile_facts=None):
+        if tile_facts is None:
+            tile_facts = {}
+
         def h(pos):
             if heuristic_type == 'euclidean':
                 return self.euclidean_distance(pos, goal_pos)
@@ -175,6 +200,14 @@ class SearchAgent:
             for direction, neighbour in self.get_successors(current_pos, walls, grid_size):
                 if neighbour in reached_states:
                     continue
+                # Reachability (wall / off-grid) is already checked by get_successors().
+                # Feasibility: ask the Knowledge Base before adding to the open list.
+                self.kb.clear_facts()
+                for fact in tile_facts.get(neighbour, []):
+                    self.kb.tell_fact(fact)
+                self.kb.forward_chain()
+                if 'Retreat' in self.kb.facts:
+                    continue   # Infeasible: physically reachable but logically unsafe -> skip
                 g_new = g_cost + 1
                 f_new = g_new + h(neighbour)
                 heapq.heappush(frontier, (f_new, g_new, neighbour, path_taken + [direction]))
@@ -187,7 +220,3 @@ class SearchAgent:
 #     a = SearchAgent()
 #     print(a.manhattan_distance((0, 0), (3, 4)))   # 7
 #     print(a.euclidean_distance((0, 0), (3, 4)))   # 5.0
-
-    
-
-    
