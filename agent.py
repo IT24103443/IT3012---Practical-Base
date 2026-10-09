@@ -2,6 +2,7 @@
 from collections import deque
 import heapq
 import math
+import random
 from logic_engine import KnowledgeBase
 
 class GreedyGridAgent:
